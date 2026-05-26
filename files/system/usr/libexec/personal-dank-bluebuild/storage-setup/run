@@ -134,13 +134,39 @@ if [[ "$WD_1TB_SUCCESS" == true ]] || [[ "$SAMSUNG_SUCCESS" == true ]]; then
       )
 
       for directory in "${DIRECTORIES[@]}"; do
-        [[ -L "$HOME_DIR/$directory" ]] && unlink "$HOME_DIR/$directory"
+        if [[ -L "$HOME_DIR/$directory" ]]; then
+          echo "Unlinking existing symlink: $HOME_DIR/$directory"
+
+          if unlink "$HOME_DIR/$directory"; then
+            echo "Unlinked existing symlink: $HOME_DIR/$directory"
+          else  
+            echo "Failed to unlink existing symlink: $HOME_DIR/$directory" >&2
+            continue
+          fi
+          continue
+        fi
+
         # shellcheck disable=SC2115
-        [[ -d "$HOME_DIR/$directory" && ! -L "$HOME_DIR/$directory" ]] && rm -r "$HOME_DIR/$directory"
+        if [[ -d "$HOME_DIR/$directory" && ! -L "$HOME_DIR/$directory" ]]; then 
+          echo "Removing existing directory: $HOME_DIR/$directory"
+
+          if rm -r "$HOME_DIR/$directory"; then
+            echo "Removed existing directory: $HOME_DIR/$directory"
+          else
+            echo "Failed to remove existing directory: $HOME_DIR/$directory" >&2
+            continue
+          fi
+          continue
+        fi
       done
       echo "Removed existing standard directories in $HOME_DIR (if they existed)."
 
       for directory in "${DIRECTORIES[@]}"; do
+        if [[ -e "$HOME_DIR/$directory" ]]; then
+          echo "Failed to create symlink: $HOME_DIR/$directory -> $HOME_DIR/.mount/WD-1TB@FILES/$directory."
+          continue
+        fi
+
         ln -s "$HOME_DIR/.mount/WD-1TB@FILES/$directory" "$HOME_DIR/$directory"
         echo "Created symlink: $HOME_DIR/$directory -> $HOME_DIR/.mount/WD-1TB@FILES/$directory"
       done
