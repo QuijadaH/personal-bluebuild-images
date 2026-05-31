@@ -1,9 +1,9 @@
 ---
 # yaml-language-server: $schema=https://schema.blue-build.org/recipe-v1.json
-name: personal-dank-bluebuild-hyprland
+name: dankblue-hyprland
 description: This is my personal OS image.
 
-base-image: ghcr.io/quijadah/dank-bluebuild-hyprland
+base-image: ghcr.io/dank-blue/hyprland
 image-version: latest
 
 modules:

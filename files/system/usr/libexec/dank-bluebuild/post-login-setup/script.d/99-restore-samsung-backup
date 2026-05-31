@@ -10,31 +10,77 @@ on_interrupt() {
 }
 trap on_interrupt INT TERM
 
+if [ "$EUID" -ne 0 ]; then
+    SCRIPT_USER="$USER"
+    SCRIPT_HOME="$HOME"
+    SCRIPT_SUDO=false
+
+    echo "This script requires sudo privileges."
+    echo "Requesting sudo privileges... (Press Ctrl+C to cancel)"
+
+    if ! sudo -v &> /dev/null; then
+        echo "Failed to obtain sudo privileges." >&2
+        autostart_prompt
+        exit 1
+    fi
+
+    echo "Sudo privileges granted."
+
+    sudo_keepalive() {
+        while sleep 60; do
+            sudo -n true || exit
+        done
+    }
+    sudo_keepalive &
+    SUDO_LOOP_PID=$!
+
+    # shellcheck disable=SC2329
+
+    cleanup() {
+        if ! $SCRIPT_SUDO; then
+            sudo kill "$SUDO_LOOP_PID" 2>/dev/null || true
+            sudo -K || true
+        fi
+    }
+    trap cleanup EXIT
+else
+    SCRIPT_USER="$SUDO_USER"
+    SCRIPT_HOME="$SUDO_HOME"
+    SCRIPT_SUDO=true
+fi
+
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_STATE="/var/lib/dank-bluebuild/post-login-setup/script.d/$SCRIPT_NAME.completed"
+SCRIPT_HOME_STATE="$SCRIPT_HOME/.local/state/dank-bluebuild/post-login-setup/script.d/$SCRIPT_NAME.completed"
+
+if [ -f "$SCRIPT_STATE" ] || [ -f "$SCRIPT_HOME_STATE" ]; then
+    echo "Script '$SCRIPT_NAME' already completed."
+    exit 0
+fi
+
 failed() {
-    echo "Failed to restore ${USER}'s backup." >&2
+    echo "Failed to restore $SCRIPT_USER's backup." >&2
     exit 1
 }
 
-echo "Attempting to restore ${USER}'s backup..."
-
-if [ "$EUID" -ne 0 ]; then
-    echo "Please run this script as root." >&2
-    exit 1
-fi
+echo "Attempting to restore $SCRIPT_USER's backup..."
 
 TEMP_MOUNTPOINT=$(mktemp -d)
-mount -o subvolid=5 -L WD-1TB "$TEMP_MOUNTPOINT"
-
-echo "Temporarily mounted WD-1TB at '$TEMP_MOUNTPOINT'."
+if sudo mount -o subvolid=5 -L WD-1TB "$TEMP_MOUNTPOINT"; then
+    echo "Temporarily mounted WD-1TB at '$TEMP_MOUNTPOINT'."
+else
+    echo "Failed to mount WD-1TB at '$TEMP_MOUNTPOINT'." >&2
+    failed
+fi
 
 # shellcheck disable=SC2329
 cleanup() {
-    umount "$TEMP_MOUNTPOINT" 2>/dev/null || true
-    rmdir "$TEMP_MOUNTPOINT" 2>/dev/null || true
+    sudo umount "$TEMP_MOUNTPOINT" 2>/dev/null || true
+    sudo rmdir "$TEMP_MOUNTPOINT" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-if btrfs subvolume list "$TEMP_MOUNTPOINT"  | awk '{print $NF}' | grep -qx "@samsung_backup"; then
+if sudo btrfs subvolume list "$TEMP_MOUNTPOINT"  | awk '{print $NF}' | grep -qx "@samsung_backup"; then
     echo "Confirmed that Btrfs subvolume '@samsung_backup' exists in WD-1TB."
 else
     echo "Btrfs subvolume '@samsung_backup' does not exist in WD-1TB."
@@ -42,7 +88,7 @@ else
     failed
 fi
 
-if mountpoint -q "$HOME/.mount/SAMSUNG@STORAGE"; then
+if sudo -u "$SCRIPT_USER" mountpoint -q "$SCRIPT_HOME/.mount/SAMSUNG@STORAGE"; then
     echo "Confirmed that '~/.mount/SAMSUNG@STORAGE' is a successful mountpoint."
 else
     echo "Nothing was mounted at '~/.mount/SAMSUNG@STORAGE'."
@@ -52,12 +98,15 @@ fi
 
 echo "Rsync starting..."
 
-if rsync -ah --info=progress2 "$TEMP_MOUNTPOINT"/@samsung_backup/ "$HOME"/.mount/SAMSUNG@STORAGE/; then
+if sudo rsync -ah --info=progress2 "$TEMP_MOUNTPOINT"/@samsung_backup/ "$2"/.mount/SAMSUNG@STORAGE/; then
     echo "Successfully restored data from '@samsung_backup' to '~/.mount/SAMSUNG@STORAGE'."
 else
     echo "Failed to restore data from '@samsung_backup' to '~/.mount/SAMSUNG@STORAGE'." >&2
     failed
 fi
 
-echo "Sucessfully restored ${USER}'s backup."
+echo "Sucessfully restored $SCRIPT_USER's backup."
+
+mkdir -p "$(dirname "$SCRIPT_HOME_STATE")"
+touch "$SCRIPT_HOME_STATE"
 exit 0

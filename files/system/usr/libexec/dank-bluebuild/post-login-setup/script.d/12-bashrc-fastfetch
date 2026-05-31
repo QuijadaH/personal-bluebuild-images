@@ -10,14 +10,28 @@ on_interrupt() {
 }
 trap on_interrupt INT TERM
 
-echo "Adding Fastfetch to '~/.bashrc'..."
+if [ "$EUID" -ne 0 ]; then
+    SCRIPT_HOME="$HOME"
+else
+    SCRIPT_HOME="$SUDO_HOME"
+fi
 
-failed() {
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_STATE="/var/lib/dank-bluebuild/post-login-setup/script.d/$SCRIPT_NAME.completed"
+SCRIPT_HOME_STATE="$SCRIPT_HOME/.local/state/dank-bluebuild/post-login-setup/script.d/$SCRIPT_NAME.completed"
+
+if [ -f "$SCRIPT_STATE" ] || [ -f "$SCRIPT_HOME_STATE" ]; then
+    echo "Script '$SCRIPT_NAME' already completed."
+    exit 0
+fi
+
+echo "Adding Fastfetch to '~/.bashrc'..."
+if ! echo "fastfetch" >> "$SCRIPT_HOME"/.bashrc; then
     echo "Failed to add Fastfetch to '~/.bashrc'." >&2
     exit 1
-}
-
-echo "fastfetch" >> "$HOME"/.bashrc || failed
-
+fi
 echo "Successfully added Fastfetch to '~/.bashrc'."
+
+mkdir -p "$(dirname "$SCRIPT_HOME_STATE")"
+touch "$SCRIPT_HOME_STATE"
 exit 0

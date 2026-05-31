@@ -10,14 +10,28 @@ on_interrupt() {
 }
 trap on_interrupt INT TERM
 
+if [ "$EUID" -ne 0 ]; then
+    SCRIPT_HOME="$HOME"
+else
+    SCRIPT_HOME="$SUDO_HOME"
+fi
+
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_STATE="/var/lib/dank-bluebuild/post-login-setup/script.d/$SCRIPT_NAME.completed"
+SCRIPT_HOME_STATE="$SCRIPT_HOME/.local/state/dank-bluebuild/post-login-setup/script.d/$SCRIPT_NAME.completed"
+
+if [ -f "$SCRIPT_STATE" ] || [ -f "$SCRIPT_HOME_STATE" ]; then
+    echo "Script '$SCRIPT_NAME' already completed."
+    exit 0
+fi
+
 echo "Initializing Starship..."
-
-failed() {
-    echo "Failed to initialize Starship in '~/.bashrc'." >&2
+if ! echo "eval \"\$(starship init bash)\"" >> "$SCRIPT_HOME"/.bashrc; then
+    echo "Failed to initialize Starship." >&2
     exit 1
-}
+fi
+echo "Successfully initialized Starship."
 
-echo "eval \"\$(starship init bash)\"" >> "$HOME"/.bashrc || failed
-
-echo "Successfully initialized Starship in '~/.bashrc'."
+mkdir -p "$(dirname "$SCRIPT_HOME_STATE")"
+touch "$SCRIPT_HOME_STATE"
 exit 0
